@@ -7,7 +7,7 @@ import time
 # We're generating our navmesh in pixel space, but the navmesh baker
 # gets really slow with a scale that big (in the thousandss).
 # So we scale down the polygons to a more reasonable size.
-SCALE = 100
+SCALE = 50
 
 def generate_navmesh(input_file="polygons.txt", output_file="navmesh.txt"):
     polygons = numpy.fromfile(input_file, dtype=numpy.int32)
