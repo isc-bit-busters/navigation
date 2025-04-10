@@ -1,11 +1,18 @@
 from pathfinder import navmesh_baker as nmb
+import pathfinder as pf
 import numpy
 import trimesh
+import time
+
+# We're generating our navmesh in pixel space, but the navmesh baker
+# gets really slow with a scale that big (in the thousandss).
+# So we scale down the polygons to a more reasonable size.
+SCALE = 100
 
 def generate_navmesh(input_file="polygons.txt", output_file="navmesh.txt"):
     polygons = numpy.fromfile(input_file, dtype=numpy.int32)
     polygons = polygons.reshape(-1, 4)
-    polygons = polygons / 100   # TODO: pixel-space to world-space
+    polygons = polygons / SCALE
     max_x, max_y = polygons[:, 0].max(), polygons[:, 1].max()
 
     # polygons = polygons[(polygons[:, 2] > 0.1) & (polygons[:, 3] > 0.1)]
@@ -64,14 +71,45 @@ def generate_navmesh(input_file="polygons.txt", output_file="navmesh.txt"):
 
     baker.bake(
         agent_radius=0.4,   # TODO: unhardcode this
-        cell_size=0.1,      # TODO: unhardcode this
+        cell_size=0.0333,   # TODO: unhardcode this
         verts_per_poly=3
     )
 
     baker.save_to_text(output_file)
 
-    # vertices, polygons = baker.get_polygonization()
+def find_path(start, end, navmesh_file="navmesh.txt"):
+    start = numpy.array(start) / SCALE
+    end = numpy.array(end) / SCALE
+    vertices, polygons = pf.read_from_text(navmesh_file)
+    pathfinder = pf.PathFinder(vertices, polygons)
+
+    start = pathfinder.sample(start)
+    end = pathfinder.sample(end)
+
+    path = pathfinder.search_path(start, end)
+
+    if path is not None:
+        path = numpy.array(path) * SCALE
+
+    return path
 
 
 if __name__ == "__main__":
-    generate_navmesh()
+    start_time = time.time()
+    generate_navmesh(
+        input_file="polygons.txt",
+        output_file="navmesh.txt"
+    )
+
+    print(f"Navmesh generation took {time.time() - start_time:.2f} seconds")
+    start_time = time.time()
+
+    sl = find_path(
+        start=(300, 0, 100), 
+        end=(1500, 0, 100),
+        navmesh_file="navmesh.txt"
+    )
+    print(f"Pathfinding took {time.time() - start_time:.2f} seconds")
+
+    print("Path:")
+    print(sl)
