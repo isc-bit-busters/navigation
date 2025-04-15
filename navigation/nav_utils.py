@@ -4,6 +4,9 @@ import numpy
 import trimesh
 import time
 
+from shapely.geometry import LineString, Point, box, Polygon
+import math
+
 # We're generating our navmesh in pixel space, but the navmesh baker
 # gets really slow with a scale that big (in the thousandss).
 # So we scale down the polygons to a more reasonable size.
@@ -88,10 +91,90 @@ def find_path(start, end, navmesh_file="navmesh.txt"):
 
     path = pathfinder.search_path(start, end)
 
+    if path and not path_is_blocked(path, obstacles):
+        print("Path not blocked")
+        pass
+    else:
+        print("Path is blocked")
+        path = None
+
     if path is not None:
         path = numpy.array(path) * SCALE
 
     return path
+def create_oriented_rectangle(center, width, height, angle_deg):
+    cx, cy = center
+    angle_rad = math.radians(angle_deg)
+
+    hw, hh = width / 2, height / 2
+
+    local_corners = [
+        (-hw, -hh),
+        ( hw, -hh),
+        ( hw,  hh),
+        (-hw,  hh)
+    ]
+
+    world_corners = []
+    for x, y in local_corners:
+        xr = x * math.cos(angle_rad) - y * math.sin(angle_rad)
+        yr = x * math.sin(angle_rad) + y * math.cos(angle_rad)
+        world_corners.append((cx + xr, cy + yr))
+
+    return Polygon(world_corners)
+
+
+obstacles = [
+    # TODO : be careful to add SCALE conversion, and add car size
+    {"type": "circle", "center": (9.0, 4.0), "radius": 0.5},
+    # {"type": "aabb", "min": (6.0, 5.0), "max": (5.0, 3.0)},
+    {"type": "polygon", "shape": create_oriented_rectangle(center=(5, 5), width=3, height=2, angle_deg=30)}
+]
+
+
+def path_is_blocked(path, obstacles):
+    for i in range(len(path) - 1):
+        a, b = path[i], path[i + 1]
+        print(f"Checking path segment {a} to {b}")
+
+        a = (a[0], a[2])
+        b = (b[0], b[2])
+        for obs in obstacles:
+            if obs["type"] == "circle" and line_intersects_circle(a, b, obs["center"], obs["radius"]):
+                print(f"Path intersects circle at {obs['center']} with radius {obs['radius']}")
+                return True
+            if obs["type"] == "aabb" and line_intersects_aabb(a, b, obs["min"], obs["max"]):
+                print(f"Path intersects AABB at {obs['min']} to {obs['max']}")
+                return True
+            if obs["type"] == "polygon" and line_intersects_polygon(a, b, obs["shape"]):
+                print(f"Path intersects polygon at {obs['shape']}")
+                return True
+    return False
+
+def line_intersects_circle(p1, p2, center, radius):
+    return LineString([p1, p2]).distance(Point(center)) <= radius
+
+def line_intersects_aabb(p1, p2, min_pt, max_pt):
+    return LineString([p1, p2]).intersects(box(*min_pt, *max_pt))
+
+def line_intersects_polygon(p1, p2, polygon):
+    return LineString([p1, p2]).intersects(polygon)
+
+
+def find_blocked_segments(path, obstacles):
+    blocked_segments = []
+    for i in range(len(path) - 1):
+        a, b = path[i], path[i + 1]
+        a = (a[0], a[2])
+        b = (b[0], b[2])
+        for obs in obstacles:
+            if obs["type"] == "circle" and line_intersects_circle(a, b, obs["center"], obs["radius"]):
+                blocked_segments.append((a, b))
+            if obs["type"] == "aabb" and line_intersects_aabb(a, b, obs["min"], obs["max"]):
+                blocked_segments.append((a, b))
+            if obs["type"] == "polygon" and line_intersects_polygon(a, b, obs["shape"]):
+                blocked_segments.append((a, b))
+    return blocked_segments
 
 
 if __name__ == "__main__":
@@ -106,7 +189,7 @@ if __name__ == "__main__":
 
     sl = find_path(
         start=(300, 0, 100), 
-        end=(1500, 0, 100),
+        end=(100, 0, 100),
         navmesh_file="navmesh.txt"
     )
     print(f"Pathfinding took {time.time() - start_time:.2f} seconds")
